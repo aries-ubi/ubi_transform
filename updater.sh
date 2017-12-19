@@ -72,17 +72,13 @@ warn_repartition() {
 set -x
 export PATH=/:/sbin:/system/xbin:/system/bin:/tmp:$PATH
 
-# make sure there's not 3 partitions, we can't handle that many
-if /tmp/busybox test -e /dev/block/mmcblk0p3 ; then
-    ui_print "You have 3+ partitions"
-    ui_print "Please go down to 2 or fewer"
-    ui_print "and the run this again"
-    exit 4
-fi
-
-# check if we're running on a bml or mtd device
-if /tmp/busybox test -e /dev/block/bml7 || [ "$(/tmp/busybox cat /sys/class/mtd/mtd1/name)" != "ramdisk" ] ; then
-    # we're running on a bml or an old mtd device
+# check if we're already running a UBI device
+if /tmp/busybox test -e /dev/block/ubiblock0_0 ; then
+    ui_print "Already converted to UBI!"
+    ui_print "Exiting without changes"
+    exit 2
+else
+    # we're running on a non-ubi device
 
     # warn repartition
     warn_repartition
@@ -98,7 +94,7 @@ if /tmp/busybox test -e /dev/block/bml7 || [ "$(/tmp/busybox cat /sys/class/mtd/
 
     # make sure efs is mounted
     if /tmp/busybox test -e /dev/block/mtdblock0 ; then
-        check_mount /efs /dev/block/stl3 yaffs2
+        check_mount /efs /dev/block/mtdblock4 yaffs2
     else
         check_mount /efs /dev/block/stl3 rfs
     fi
@@ -120,6 +116,8 @@ if /tmp/busybox test -e /dev/block/bml7 || [ "$(/tmp/busybox cat /sys/class/mtd/
     cd /sdcard/backup/
     /tmp/busybox md5sum -t efs.tar > efs.tar.md5
 
+    /tmp/busybox umount /efs
+
     # write new kernel to boot partition
     /tmp/busybox chmod +x /tmp/flash_image
     /tmp/flash_image boot /tmp/boot.img
@@ -133,23 +131,5 @@ if /tmp/busybox test -e /dev/block/bml7 || [ "$(/tmp/busybox cat /sys/class/mtd/
     /tmp/busybox sleep 10
 
     /sbin/reboot
-    exit 0
-elif /tmp/busybox test -e /dev/block/mtdblock0 ; then
-    # we're running on an mtd (new) device
-
-    # make sure sdcard is mounted
-    check_mount /sdcard /dev/block/mmcblk0p1 ext4
-
-    # everything is logged into /sdcard/aries_mtd.log
-    set_log /sdcard/aries_mtd.log
-
-    # write new kernel to boot partition
-    /tmp/busybox chmod +x /tmp/flash_image
-    /tmp/flash_image boot /tmp/boot.img
-    if [ "$?" != "0" ] ; then
-        /tmp/busybox echo "Failed to write kernel to boot partition"
-        exit 2
-    fi
-    /tmp/busybox umount /sdcard
     exit 0
 fi
